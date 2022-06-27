@@ -36,6 +36,10 @@ namespace mypcl
     file.open(path);
     double tx, ty, tz, w, x, y, z;
     int cnt = 0;
+    if (!file.is_open())
+    {
+      throw std::runtime_error("Failed to read_pose from: " + path);
+    }
     while(!file.eof())
     {
       file >> tx >> ty >> tz >> w >> x >> y >> z;
@@ -101,7 +105,11 @@ namespace mypcl
   {
     std::ofstream file;
     file.open(path + "pose.json", std::ofstream::trunc);
-    Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(), 
+    if (!file.is_open())
+    {
+      throw std::runtime_error("Failed to write_pose to: " + path);
+    }
+    Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(),
                           pose_vec[0].q.y(), pose_vec[0].q.z());
     Eigen::Vector3d t0(pose_vec[0].t(0), pose_vec[0].t(1), pose_vec[0].t(2));
     for(size_t i = 0; i < pose_vec.size(); i++)
@@ -124,6 +132,10 @@ namespace mypcl
   {
     std::ofstream file;
     file.open(path + "ref.json", std::ofstream::trunc);
+    if (!file.is_open())
+    {
+      throw std::runtime_error("Failed to write_ref to: " + path);
+    }
     for(size_t i = 0; i < ref_vec.size(); i++)
     {
       Eigen::Quaterniond q = ref_vec[i].q;
@@ -142,7 +154,11 @@ namespace mypcl
   {
     std::ofstream file;
     file.open(path + "pose.json", std::ofstream::trunc);
-    Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(), 
+    if (!file.is_open())
+    {
+      throw std::runtime_error("Failed to write_pose to: " + path);
+    }
+    Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(),
                           pose_vec[0].q.y(), pose_vec[0].q.z());
     Eigen::Vector3d t0(pose_vec[0].t(0), pose_vec[0].t(1), pose_vec[0].t(2));
     for(size_t i = 0; i < pose_vec.size(); i++)
