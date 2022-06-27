@@ -40,9 +40,8 @@ namespace mypcl
     {
       throw std::runtime_error("Failed to read_pose from: " + path);
     }
-    while(!file.eof())
+    while (file >> tx >> ty >> tz >> w >> x >> y >> z)
     {
-      file >> tx >> ty >> tz >> w >> x >> y >> z;
       pose_vec.emplace_back(pose(Eigen::Quaterniond(w, x, y, z),
                             Eigen::Vector3d(tx, ty, tz)));
       cnt++;
