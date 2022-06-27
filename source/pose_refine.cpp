@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <filesystem>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -64,6 +65,7 @@ void cut_voxel(unordered_map<VOXEL_LOC, OCTO_TREE*>& feature_map,
 
 int main(int argc, char** argv)
 {
+  namespace fs = std::filesystem;
   ros::init(argc, argv, "pose_refine");
   ros::NodeHandle nh("~");
 
@@ -81,8 +83,8 @@ int main(int argc, char** argv)
   nh.getParam("downsmp_sz_base", downsmp_sz_base);
 
   sensor_msgs::PointCloud2 debugMsg, colorCloudMsg;
-  vector<mypcl::pose> pose_vec = mypcl::read_pose(data_path + "original_pose/" + 
-                                                  to_string(base_lidar) + ".json");
+  vector<mypcl::pose> pose_vec = mypcl::read_pose(
+    fs::path(data_path) / "original_pose/" / (to_string(base_lidar) + ".json"));
   size_t pose_size = pose_vec.size();
   ros::Time t_begin, t_end, cur_t;
   double avg_time = 0.0;
@@ -96,10 +98,11 @@ int main(int argc, char** argv)
   for(size_t i = 0; i < pose_size; i++)
   {
     pcl::PointCloud<PointType>::Ptr pc(new pcl::PointCloud<PointType>);
-    pcl::io::loadPCDFile(data_path+to_string(base_lidar)+"/"+to_string(i)+".pcd", *pc);
+    pcl::io::loadPCDFile(
+      fs::path(data_path) / to_string(base_lidar) / (to_string(i)+".pcd"), *pc);
     base_pc[i] = pc;
   }
-  
+
   int loop = 0;
   for(; loop < max_iter; loop++)
   {
@@ -123,7 +126,7 @@ int main(int argc, char** argv)
 
     for(int i = 0; i < window_size; i++)
       assign_qt(lm_opt.poses[i], lm_opt.ts[i], pose_vec[i].q, pose_vec[i].t);
-    
+
     for(auto iter = surf_map.begin(); iter != surf_map.end(); ++iter)
       if(iter->second->is2opt)
         iter->second->feed_pt(lm_opt);
@@ -157,13 +160,14 @@ int main(int argc, char** argv)
   cout << "complete" << endl;
   cout << "averaged iteration time " << avg_time / (loop+1) << endl;
   mypcl::write_pose(pose_vec, data_path);
-  
+
   Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(),
                         pose_vec[0].q.y(), pose_vec[0].q.z());
   Eigen::Vector3d t0(pose_vec[0].t(0), pose_vec[0].t(1), pose_vec[0].t(2));
   for(size_t i = 0; i < pose_size; i++)
   {
-    pcl::io::loadPCDFile(data_path+to_string(base_lidar)+"/"+to_string(i)+".pcd", *pc_surf);
+    pcl::io::loadPCDFile(
+      fs::path(data_path) / to_string(base_lidar) / (to_string(i)+".pcd"), *pc_surf);
     mypcl::transform_pointcloud(*pc_surf, *pc_surf,
       q0.inverse()*(pose_vec[i].t-t0), q0.inverse()*pose_vec[i].q);
 
