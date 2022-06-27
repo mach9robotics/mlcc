@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <filesystem>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -80,6 +81,7 @@ void cut_voxel(unordered_map<VOXEL_LOC, OCTO_TREE*>& feature_map,
 
 int main(int argc, char** argv)
 {
+  namespace fs = std::filesystem;
   ros::init(argc, argv, "extrinsic_refine");
   ros::NodeHandle nh("~");
 
@@ -89,6 +91,7 @@ int main(int argc, char** argv)
   string data_path, log_path;
   int max_iter, base_lidar, ref_lidar;
   double downsmp_sz_base, downsmp_sz_ref;
+  std::string ref_path;
 
   nh.getParam("data_path", data_path);
   nh.getParam("log_path", log_path);
@@ -98,13 +101,17 @@ int main(int argc, char** argv)
   nh.getParam("voxel_size", voxel_size);
   nh.getParam("downsmp_sz_base", downsmp_sz_base);
   nh.getParam("downsmp_sz_ref", downsmp_sz_ref);
+  nh.param("ref_path", ref_path, (fs::path(data_path) / "ref.json").string());
 
   sensor_msgs::PointCloud2 debugMsg, colorCloudMsg;
-  vector<mypcl::pose> pose_vec = mypcl::read_pose(data_path + "pose.json");
-  vector<mypcl::pose> ref_vec = mypcl::read_pose(data_path + "ref.json");
+  vector<mypcl::pose> pose_vec = mypcl::read_pose(fs::path(data_path) / "pose.json");
+  vector<mypcl::pose> ref_vec = mypcl::read_pose(ref_path);
+  mypcl::pose ref_pose = ref_vec[ref_lidar];
+  ref_vec.clear();
+  ref_vec.push_back(ref_pose);
   size_t ref_size = ref_vec.size();
   size_t pose_size = pose_vec.size();
-  
+
   ros::Time t_begin, t_end, cur_t;
   double avg_time = 0.0;
 
@@ -119,8 +126,8 @@ int main(int argc, char** argv)
   {
     pcl::PointCloud<PointType>::Ptr pc_base(new pcl::PointCloud<PointType>);
     pcl::PointCloud<PointType>::Ptr pc_ref(new pcl::PointCloud<PointType>);
-    pcl::io::loadPCDFile(data_path+to_string(base_lidar)+"/"+to_string(i)+".pcd", *pc_base);
-    pcl::io::loadPCDFile(data_path+to_string(ref_lidar)+"/"+to_string(i)+".pcd", *pc_ref);
+    pcl::io::loadPCDFile(fs::path(data_path) / to_string(base_lidar) / (to_string(i)+".pcd"), *pc_base);
+    pcl::io::loadPCDFile(fs::path(data_path) / to_string(ref_lidar) / (to_string(i)+".pcd"), *pc_ref);
     base_pc[i] = pc_base;
     ref_pc[i] = pc_ref;
   }
@@ -184,7 +191,7 @@ int main(int argc, char** argv)
       mypcl::transform_pointcloud(*base_pc[i], *pc_debug,
         q0.inverse()*(pose_vec[i].t-t0), q0.inverse()*pose_vec[i].q);
       pc_color = mypcl::append_cloud(pc_color, *pc_debug);
-      
+
       mypcl::transform_pointcloud(*ref_pc[i], *pc_debug,
         q0.inverse()*(pose_vec[i].t-t0)+q0.inverse()*pose_vec[i].q*ref_vec[0].t,
         q0.inverse()*pose_vec[i].q*ref_vec[0].q);
@@ -196,11 +203,13 @@ int main(int argc, char** argv)
     debugMsg.header.stamp = cur_t;
     pub_surf_debug.publish(debugMsg);
   }
-  
+
   cout << "---------------------" << endl;
   cout << "complete" << endl;
   cout << "averaged iteration time " << avg_time / (loop+1) << endl;
-  mypcl::write_ref(ref_vec, data_path);
+  std::vector<mypcl::pose> poses_ref = mypcl::read_pose(ref_path);
+  poses_ref[ref_lidar] = ref_vec[0];
+  mypcl::write_ref(poses_ref, ref_path);
 
   pc_color->clear();
   Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(),
@@ -208,15 +217,15 @@ int main(int argc, char** argv)
   Eigen::Vector3d t0(pose_vec[0].t(0), pose_vec[0].t(1), pose_vec[0].t(2));
   for(size_t i = 0; i < pose_size; i++)
   {
-    pcl::io::loadPCDFile(data_path+to_string(base_lidar)+"/"+to_string(i)+".pcd", *pc_surf);
+    pcl::io::loadPCDFile(fs::path(data_path) / to_string(base_lidar) / (to_string(i)+".pcd"), *pc_surf);
     mypcl::transform_pointcloud(*pc_surf, *pc_surf,
       q0.inverse()*(pose_vec[i].t-t0), q0.inverse()*pose_vec[i].q);
     pcl::toROSMsg(*pc_surf, colorCloudMsg);
     colorCloudMsg.header.frame_id = "camera_init";
     colorCloudMsg.header.stamp = cur_t;
     pub_surf.publish(colorCloudMsg);
-    
-    pcl::io::loadPCDFile(data_path+to_string(ref_lidar)+"/"+to_string(i)+".pcd", *pc_surf);
+
+    pcl::io::loadPCDFile(fs::path(data_path) / to_string(ref_lidar) / (to_string(i)+".pcd"), *pc_surf);
     mypcl::transform_pointcloud(*pc_surf, *pc_surf,
       q0.inverse()*(pose_vec[i].t-t0)+q0.inverse()*pose_vec[i].q*ref_vec[0].t,
       q0.inverse()*pose_vec[i].q*ref_vec[0].q);

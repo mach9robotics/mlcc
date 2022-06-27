@@ -130,7 +130,7 @@ namespace mypcl
   void write_ref(std::vector<pose> ref_vec, std::string path)
   {
     std::ofstream file;
-    file.open(path + "ref.json", std::ofstream::trunc);
+    file.open(path, std::ofstream::trunc);
     if (!file.is_open())
     {
       throw std::runtime_error("Failed to write_ref to: " + path);
