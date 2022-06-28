@@ -2,12 +2,14 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <unordered_map>
+#include <filesystem>
 
 #include "mypcl.hpp"
 #include "global.hpp"
 
 using namespace std;
 using namespace Eigen;
+namespace fs = std::filesystem;
 double voxel_size;
 
 void cut_voxel(unordered_map<VOXEL_LOC, OCTO_TREE*>& feature_map,
@@ -81,7 +83,7 @@ int main(int argc, char** argv)
   ros::Publisher pub_surf_debug = nh.advertise<sensor_msgs::PointCloud2>("/debug_surf", 100);
 
   string data_path, log_path;
-  int max_iter, base_lidar, ref_lidar1, ref_lidar2, ref_lidar3;
+  int max_iter, base_lidar;
   vector<int> ref_lidar;
   double downsmp_sz_base, downsmp_sz_ref;
 
@@ -89,23 +91,21 @@ int main(int argc, char** argv)
   nh.getParam("log_path", log_path);
   nh.getParam("max_iter", max_iter);
   nh.getParam("base_lidar", base_lidar);
-  nh.getParam("ref_lidar1", ref_lidar1); ref_lidar.emplace_back(ref_lidar1);
-  nh.getParam("ref_lidar2", ref_lidar2); ref_lidar.emplace_back(ref_lidar2);
-  if(base_lidar == 3)
-  {
-    nh.getParam("ref_lidar3", ref_lidar3);
-    ref_lidar.emplace_back(ref_lidar3);
-  }
+  nh.getParam("ref_lidars", ref_lidar);
   nh.getParam("voxel_size", voxel_size);
   nh.getParam("downsmp_sz_base", downsmp_sz_base);
   nh.getParam("downsmp_sz_ref", downsmp_sz_ref);
 
   sensor_msgs::PointCloud2 debugMsg, colorCloudMsg;
-  vector<mypcl::pose> pose_vec = mypcl::read_pose(data_path + "pose.json");
-  vector<mypcl::pose> ref_vec = mypcl::read_pose(data_path + "ref.json");
+  vector<mypcl::pose> pose_vec = mypcl::read_pose(fs::path(data_path) / "pose.json");
+  vector<mypcl::pose> ref_vec = mypcl::read_pose(fs::path(data_path) / "ref.json");
+  ref_vec.erase(ref_vec.begin());
   size_t ref_size = ref_vec.size();
   size_t pose_size = pose_vec.size();
-  
+
+  ROS_INFO("pose_vac size: %d", (int)pose_size);
+  ROS_INFO("ref_vac size: %d", (int)ref_size);
+
   ros::Time t_begin, t_end, cur_t;
   double avg_time = 0.0;
 
@@ -115,17 +115,19 @@ int main(int argc, char** argv)
   vector<pcl::PointCloud<PointType>::Ptr> base_pc, ref_pc;
   base_pc.resize(pose_size);
   ref_pc.resize(pose_size * ref_size);
+  // load base map
   for(size_t i = 0; i < pose_size; i++)
   {
     pcl::PointCloud<PointType>::Ptr pc_base(new pcl::PointCloud<PointType>);
-    pcl::io::loadPCDFile(data_path+to_string(base_lidar)+"/"+to_string(i)+".pcd", *pc_base);
+    pcl::io::loadPCDFile(fs::path(data_path) / to_string(base_lidar) / (to_string(i)+".pcd"), *pc_base);
     base_pc[i] = pc_base;
   }
+  // load ref maps
   for(size_t i = 0; i < ref_size; i++)
     for(size_t j = 0; j < pose_size; j++)
     {
       pcl::PointCloud<PointType>::Ptr pc_ref(new pcl::PointCloud<PointType>);
-      pcl::io::loadPCDFile(data_path+to_string(ref_lidar[i])+"/"+to_string(j)+".pcd", *pc_ref);
+      pcl::io::loadPCDFile(fs::path(data_path) / to_string(ref_lidar[i]) / (to_string(j)+".pcd"), *pc_ref);
       ref_pc[i*pose_size+j] = pc_ref;
     }
 
@@ -145,9 +147,9 @@ int main(int argc, char** argv)
       downsample_voxel(*base_pc[i], downsmp_sz_base);
       for(int j = 0; j < ref_size; j++)
         downsample_voxel(*ref_pc[j*pose_size+i], downsmp_sz_ref);
-      
+
       cut_voxel(surf_map, base_pc[i], pose_vec[i].q, pose_vec[i].t, i, pose_size, ref_size);
-      
+
       for(auto iter = surf_map.begin(); iter != surf_map.end(); ++iter)
         if(iter->second->is2opt)
           iter->second->recut(0, i);
@@ -171,7 +173,7 @@ int main(int argc, char** argv)
     for(auto iter = surf_map.begin(); iter != surf_map.end(); ++iter)
       if(iter->second->is2opt)
         iter->second->feed_pt(lm_opt);
-    
+
     lm_opt.optimize();
 
     for(size_t i = 0; i < pose_size; i++)
@@ -197,7 +199,7 @@ int main(int argc, char** argv)
   Eigen::Vector3d t0(pose_vec[0].t(0), pose_vec[0].t(1), pose_vec[0].t(2));
   for(size_t i = 0; i < pose_size; i++)
   {
-    pcl::io::loadPCDFile(data_path+to_string(base_lidar)+"/"+to_string(i)+".pcd", *pc_surf);
+    pcl::io::loadPCDFile(fs::path(data_path) / to_string(base_lidar) / (to_string(i)+".pcd"), *pc_surf);
     mypcl::transform_pointcloud(*pc_surf, *pc_surf,
       q0.inverse()*(pose_vec[i].t-t0), q0.inverse()*pose_vec[i].q);
     pcl::toROSMsg(*pc_surf, colorCloudMsg);
@@ -206,7 +208,7 @@ int main(int argc, char** argv)
     pub_surf.publish(colorCloudMsg);
     {
       int j = 0;
-      pcl::io::loadPCDFile(data_path+to_string(ref_lidar[j])+"/"+to_string(i)+".pcd", *pc_surf);
+      pcl::io::loadPCDFile(fs::path(data_path) / to_string(ref_lidar[j]) / (to_string(i)+".pcd"), *pc_surf);
       mypcl::transform_pointcloud(*pc_surf, *pc_surf,
         q0.inverse()*(pose_vec[i].t-t0)+q0.inverse()*pose_vec[i].q*ref_vec[j].t,
         q0.inverse()*pose_vec[i].q*ref_vec[j].q);
@@ -217,7 +219,7 @@ int main(int argc, char** argv)
     }
     {
       int j = 1;
-      pcl::io::loadPCDFile(data_path+to_string(ref_lidar[j])+"/"+to_string(i)+".pcd", *pc_surf);
+      pcl::io::loadPCDFile(fs::path(data_path) / to_string(ref_lidar[j]) / (to_string(i)+".pcd"), *pc_surf);
       mypcl::transform_pointcloud(*pc_surf, *pc_surf,
         q0.inverse()*(pose_vec[i].t-t0)+q0.inverse()*pose_vec[i].q*ref_vec[j].t,
         q0.inverse()*pose_vec[i].q*ref_vec[j].q);
@@ -228,7 +230,7 @@ int main(int argc, char** argv)
     }
     {
       int j = 2;
-      pcl::io::loadPCDFile(data_path+to_string(ref_lidar[j])+"/"+to_string(i)+".pcd", *pc_surf);
+      pcl::io::loadPCDFile(fs::path(data_path) / to_string(ref_lidar[j]) / (to_string(i)+".pcd"), *pc_surf);
       mypcl::transform_pointcloud(*pc_surf, *pc_surf,
         q0.inverse()*(pose_vec[i].t-t0)+q0.inverse()*pose_vec[i].q*ref_vec[j].t,
         q0.inverse()*pose_vec[i].q*ref_vec[j].q);
