@@ -91,7 +91,6 @@ int main(int argc, char** argv)
   string data_path, log_path;
   int max_iter, base_lidar, ref_lidar;
   double downsmp_sz_base, downsmp_sz_ref;
-  std::string ref_path;
 
   nh.getParam("data_path", data_path);
   nh.getParam("log_path", log_path);
@@ -101,11 +100,10 @@ int main(int argc, char** argv)
   nh.getParam("voxel_size", voxel_size);
   nh.getParam("downsmp_sz_base", downsmp_sz_base);
   nh.getParam("downsmp_sz_ref", downsmp_sz_ref);
-  nh.param("ref_path", ref_path, (fs::path(data_path) / "ref.json").string());
 
   sensor_msgs::PointCloud2 debugMsg, colorCloudMsg;
   vector<mypcl::pose> pose_vec = mypcl::read_pose(fs::path(data_path) / "pose.json");
-  vector<mypcl::pose> ref_vec = mypcl::read_pose(ref_path);
+  vector<mypcl::pose> ref_vec = mypcl::read_pose(fs::path(data_path) / "ref.json");
   mypcl::pose ref_pose = ref_vec[ref_lidar];
   ref_vec.clear();
   ref_vec.push_back(ref_pose);
@@ -207,9 +205,9 @@ int main(int argc, char** argv)
   cout << "---------------------" << endl;
   cout << "complete" << endl;
   cout << "averaged iteration time " << avg_time / (loop+1) << endl;
-  std::vector<mypcl::pose> poses_ref = mypcl::read_pose(ref_path);
+  std::vector<mypcl::pose> poses_ref = mypcl::read_pose(fs::path(data_path) / "ref.json");
   poses_ref[ref_lidar] = ref_vec[0];
-  mypcl::write_ref(poses_ref, ref_path);
+  mypcl::write_ref(poses_ref, data_path);
 
   pc_color->clear();
   Eigen::Quaterniond q0(pose_vec[0].q.w(), pose_vec[0].q.x(),
